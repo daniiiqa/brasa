@@ -1,0 +1,19 @@
+[package]
+name = "brasa"
+version = "0.1.0"
+edition = "2024"
+description = "El OSD de discada: volumen, micrófono, brillo y luz del teclado, con el look del rice"
+license = "MIT"
+
+[dependencies]
+disco = { git = "https://github.com/daniiiqa/disco", features = ["paint"] }
+libc = "0.2"
+ratatui = "0.29"
+serde_json = "1"
+smithay-client-toolkit = { version = "0.21", default-features = false, features = ["calloop"] }
+tiny-skia = "0.12.0"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
