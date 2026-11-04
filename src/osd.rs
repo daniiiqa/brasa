@@ -190,6 +190,7 @@ pub fn run() -> Result<(), String> {
     let (tx, rx) = channel::<Show>();
     // el volumen que cambia el teléfono por bluetooth (no pasa por Volume.sh)
     crate::bt::watch(tx.clone());
+    crate::bt::watch_avrcp(tx.clone());
     std::thread::spawn(move || {
         let mut buf = [0u8; 512];
         while let Ok(n) = sock.recv(&mut buf) {

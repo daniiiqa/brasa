@@ -73,3 +73,58 @@ pub fn watch(tx: Sender<Show>) {
         }
     });
 }
+
+/// El nombre del aparato de una ruta de BlueZ (…/dev_8C_DE_…/fd0 → "Daniel's S21").
+fn alias(path: &str) -> String {
+    let dev = path.rsplit_once('/').map_or(path, |(d, _)| d);
+    Command::new("busctl")
+        .args(["--system", "get-property", "org.bluez", dev, "org.bluez.Device1", "Alias"])
+        .stderr(Stdio::null())
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.trim().strip_prefix("s ").map(|n| n.trim_matches('"').replace("\\'", "'")))
+        .unwrap_or_else(|| "Bluetooth".into())
+}
+
+/// El volumen absoluto (AVRCP): los botones del teléfono no tocan el stream
+/// de PipeWire, le avisan a BlueZ (MediaTransport1.Volume, de 0 a 127). Se
+/// escucha con dbus-monitor; cada cambio es un aviso.
+pub fn watch_avrcp(tx: Sender<Show>) {
+    std::thread::spawn(move || {
+        loop {
+            let child = Command::new("dbus-monitor")
+                .args(["--system", "type='signal',sender='org.bluez',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged'"])
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn();
+            if let Ok(mut child) = child {
+                if let Some(out) = child.stdout.take() {
+                    // la ruta de la señal y si lo que sigue es "Volume"
+                    let (mut path, mut volume_next) = (String::new(), false);
+                    for line in BufReader::new(out).lines().map_while(Result::ok) {
+                        let l = line.trim();
+                        if l.starts_with("signal ") {
+                            path = l.split("path=").nth(1).and_then(|p| p.split(';').next()).unwrap_or("").to_string();
+                            volume_next = false;
+                        } else if l == "string \"Volume\"" {
+                            volume_next = true;
+                        } else if volume_next && let Some(v) = l.strip_prefix("variant").map(str::trim).and_then(|v| v.strip_prefix("uint16 ")) {
+                            volume_next = false;
+                            let Ok(v) = v.trim().parse::<u32>() else { continue };
+                            let level = (v * 100 + 63) / 127;
+                            let show = Show { kind: Kind::Volume, level: (level > 0).then_some(level), title: alias(&path) };
+                            if tx.send(show).is_err() {
+                                let _ = child.kill();
+                                return;
+                            }
+                        }
+                    }
+                }
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            std::thread::sleep(Duration::from_secs(2));
+        }
+    });
+}
