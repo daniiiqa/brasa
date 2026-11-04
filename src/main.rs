@@ -12,6 +12,7 @@
 //! Dónde sale: ~/.config/brasa/config.json → "position" como en arre
 //! (bottom-center si no dice). No agarra clics.
 
+mod bt;
 mod card;
 mod osd;
 
